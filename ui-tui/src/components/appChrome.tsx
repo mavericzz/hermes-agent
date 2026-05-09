@@ -346,6 +346,23 @@ export function StatusRule({
           {showCost && typeof usage.cost_usd === 'number' ? (
             <Text color={t.color.muted}> │ ${usage.cost_usd.toFixed(4)}</Text>
           ) : null}
+          {typeof usage.max_week_cost === 'number' ? (
+            <Text color={t.color.muted}>
+              {' │ '}
+              <Text color={t.color.label}>Max ${usage.max_week_cost.toFixed(0)}/wk</Text>
+              {typeof usage.max_block_cost === 'number' ? (
+                <Text color={t.color.muted}> · ${usage.max_block_cost.toFixed(0)} blk</Text>
+              ) : null}
+              {typeof usage.max_block_remaining_minutes === 'number' ? (
+                <Text color={t.color.muted}>
+                  {' · '}
+                  {usage.max_block_remaining_minutes >= 60
+                    ? `${Math.floor(usage.max_block_remaining_minutes / 60)}h${(usage.max_block_remaining_minutes % 60).toString().padStart(2, '0')}m`
+                    : `${usage.max_block_remaining_minutes}m`}
+                </Text>
+              ) : null}
+            </Text>
+          ) : null}
         </Text>
       </Box>
 

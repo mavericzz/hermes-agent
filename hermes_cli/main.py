@@ -5249,6 +5249,38 @@ def cmd_status(args):
     show_status(args)
 
 
+def cmd_max_usage(args):
+    """Print Claude Max plan utilisation summary."""
+    import json as _json
+    from agent.claude_max_usage import format_status_bar_label, get_max_usage
+
+    usage = get_max_usage(force=True)
+    if getattr(args, "json", False):
+        print(_json.dumps(usage, indent=2))
+        return 0
+    if not usage:
+        print(
+            "No Claude Max usage data available.\n"
+            "Install ccusage globally for fastest access: `npm i -g ccusage`\n"
+            "(falls back to `npx --yes ccusage@latest` which adds ~12s cold-start)."
+        )
+        return 1
+    print(f"Week:         ${usage.get('max_week_cost', 0):.2f}  ({usage.get('max_total_tokens_week', 0):,} tokens)")
+    if "max_today_cost" in usage:
+        print(f"Today:        ${usage['max_today_cost']:.2f}")
+    if "max_block_cost" in usage:
+        print(f"Active block: ${usage['max_block_cost']:.2f}")
+    if "max_block_remaining_minutes" in usage:
+        m = usage["max_block_remaining_minutes"]
+        if m >= 60:
+            print(f"Block resets: {m // 60}h{m % 60:02d}m")
+        else:
+            print(f"Block resets: {m}m")
+    print()
+    print(f"Status bar:   {format_status_bar_label(usage)}")
+    return 0
+
+
 def cmd_cron(args):
     """Cron job management."""
     from hermes_cli.cron import cron_command
@@ -9477,6 +9509,18 @@ def main():
         "--deep", action="store_true", help="Run deep checks (may take longer)"
     )
     status_parser.set_defaults(func=cmd_status)
+
+    # =========================================================================
+    # max-usage command — Claude Max plan utilisation snapshot
+    # =========================================================================
+    max_usage_parser = subparsers.add_parser(
+        "max-usage",
+        help="Show Claude Max plan weekly + 5h-block utilisation",
+    )
+    max_usage_parser.add_argument(
+        "--json", action="store_true", help="Emit raw JSON instead of formatted output"
+    )
+    max_usage_parser.set_defaults(func=cmd_max_usage)
 
     # =========================================================================
     # cron command

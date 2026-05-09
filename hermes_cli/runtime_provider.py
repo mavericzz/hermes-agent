@@ -1137,6 +1137,22 @@ def resolve_runtime_provider(
             "requested_provider": requested_provider,
         }
 
+    if provider == "claude_local":
+        # Auth is owned by the spawned `claude` binary — hermes never sees
+        # a token. The adapter (agent/claude_local_adapter.py) handles
+        # everything; we just need to signal the api_mode so AIAgent
+        # routes through the subprocess client instead of constructing an
+        # HTTP client.
+        pconfig = PROVIDER_REGISTRY.get("claude_local")
+        return {
+            "provider": "claude_local",
+            "api_mode": "claude_local",
+            "base_url": (pconfig.inference_base_url if pconfig else "local://claude"),
+            "api_key": "",
+            "source": "process",
+            "requested_provider": requested_provider,
+        }
+
     # Anthropic (native Messages API)
     if provider == "anthropic":
         # Allow base URL override from config.yaml model.base_url, but only

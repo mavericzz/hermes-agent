@@ -171,6 +171,11 @@ export interface SessionUsageResponse {
   cost_status?: 'estimated' | 'exact'
   cost_usd?: number
   input?: number
+  max_block_cost?: number
+  max_block_remaining_minutes?: number
+  max_today_cost?: number
+  max_total_tokens_week?: number
+  max_week_cost?: number
   model?: string
   output?: number
   total?: number

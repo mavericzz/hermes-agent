@@ -1314,6 +1314,15 @@ def _get_usage(agent) -> dict:
             usage["cost_usd"] = float(cost.amount_usd)
     except Exception:
         pass
+    # Inject Claude Max plan utilisation (if claude_local provider).  The
+    # helper TTL-caches internally so this call is cheap on the hot path —
+    # only the first call after the cache expires shells out to ccusage.
+    try:
+        if (getattr(agent, "provider", "") or "").lower() == "claude_local":
+            from agent.claude_max_usage import get_max_usage
+            usage.update(get_max_usage())
+    except Exception:
+        pass
     return usage
 
 

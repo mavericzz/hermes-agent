@@ -167,6 +167,13 @@ export interface Usage {
   cost_status?: string
   cost_usd?: number
   input: number
+  // Claude Max-plan utilisation, populated only when provider=claude_local.
+  // Sourced from local ccusage telemetry, not from the live API.
+  max_block_cost?: number
+  max_block_remaining_minutes?: number
+  max_today_cost?: number
+  max_total_tokens_week?: number
+  max_week_cost?: number
   output: number
   reasoning?: number
   total: number

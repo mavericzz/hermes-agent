@@ -83,6 +83,7 @@ MINIMAX_OAUTH_REFRESH_SKEW_SECONDS = 60
 DEFAULT_QWEN_BASE_URL = "https://portal.qwen.ai/v1"
 DEFAULT_GITHUB_MODELS_BASE_URL = "https://api.githubcopilot.com"
 DEFAULT_COPILOT_ACP_BASE_URL = "acp://copilot"
+DEFAULT_CLAUDE_LOCAL_BASE_URL = "local://claude"
 DEFAULT_OLLAMA_CLOUD_BASE_URL = "https://ollama.com/v1"
 STEPFUN_STEP_PLAN_INTL_BASE_URL = "https://api.stepfun.ai/step_plan/v1"
 STEPFUN_STEP_PLAN_CN_BASE_URL = "https://api.stepfun.com/step_plan/v1"
@@ -196,6 +197,17 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         auth_type="external_process",
         inference_base_url=DEFAULT_COPILOT_ACP_BASE_URL,
         base_url_env_var="COPILOT_ACP_BASE_URL",
+    ),
+    # Routes inference through the locally-installed `claude` binary so
+    # usage bills against the Claude Max plan. Auth is owned by the
+    # spawned binary — hermes never sees a token. See
+    # agent/claude_local_adapter.py and the matching HERMES_OVERLAYS entry
+    # in hermes_cli/providers.py.
+    "claude_local": ProviderConfig(
+        id="claude_local",
+        name="Claude Code (local CLI, Max plan)",
+        auth_type="external_process",
+        inference_base_url=DEFAULT_CLAUDE_LOCAL_BASE_URL,
     ),
     "gemini": ProviderConfig(
         id="gemini",

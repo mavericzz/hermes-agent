@@ -173,7 +173,22 @@ class AnthropicTransport(ProviderTransport):
         return self._STOP_REASON_MAP.get(raw_reason, "stop")
 
 
+class ClaudeLocalTransport(AnthropicTransport):
+    """Transport for api_mode='claude_local'.
+
+    The wire format is identical to Anthropic Messages — the locally-spawned
+    ``claude`` binary emits the same content blocks, stop reasons, and usage
+    fields. This subclass only overrides ``api_mode`` so the registry can
+    route to a distinct entry while reusing every conversion path.
+    """
+
+    @property
+    def api_mode(self) -> str:
+        return "claude_local"
+
+
 # Auto-register on import
 from agent.transports import register_transport  # noqa: E402
 
 register_transport("anthropic_messages", AnthropicTransport)
+register_transport("claude_local", ClaudeLocalTransport)

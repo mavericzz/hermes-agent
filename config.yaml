@@ -1,0 +1,18 @@
+model:
+  provider: claude_local
+  default: claude-opus-4-6
+  base_url: local://claude
+
+security:
+  redact_secrets: true
+
+network:
+  force_ipv4: true
+
+context_length: 200000
+max_steps: 50
+temperature: 0.3
+
+tools:
+  - terminal
+  - file_system

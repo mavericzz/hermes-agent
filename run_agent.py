@@ -1197,8 +1197,14 @@ class AIAgent:
         self.provider = provider_name or ""
         self.acp_command = acp_command or command
         self.acp_args = list(acp_args or args or [])
-        if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse"}:
+        if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "claude_local"}:
             self.api_mode = api_mode
+        elif self.provider == "claude_local":
+            # Spawn the locally-installed `claude` binary as the inference
+            # path so usage bills against the user's Claude Max plan instead
+            # of the third-party "extra usage" bucket. See
+            # agent/claude_local_adapter.py for the full rationale.
+            self.api_mode = "claude_local"
         elif self.provider == "openai-codex":
             self.api_mode = "codex_responses"
         elif self.provider == "xai":
@@ -1491,7 +1497,23 @@ class AIAgent:
         # Claude uses its own timeout path and is not covered here.
         _provider_timeout = get_provider_request_timeout(self.provider, self.model)
 
-        if self.api_mode == "anthropic_messages":
+        if self.api_mode == "claude_local":
+            # Subprocess-backed "client" — wraps `claude --print`. No HTTP
+            # client of our own; the spawned binary handles auth via its
+            # own OAuth credentials (Max plan), so hermes never sees a
+            # token here. The fake client exposes .messages.create() so
+            # the existing _anthropic_messages_create dispatch is unchanged.
+            from agent.claude_local_adapter import build_claude_local_client
+            self._anthropic_client = build_claude_local_client()
+            self._anthropic_api_key = ""
+            self._anthropic_base_url = ""
+            self._is_anthropic_oauth = False
+            self.api_key = ""
+            self.client = None
+            self._client_kwargs = {}
+            if not self.quiet_mode:
+                print(f"🤖 AI Agent initialized with model: {self.model} (claude_local — local CLI subprocess, billed to Max plan)")
+        elif self.api_mode == "anthropic_messages":
             from agent.anthropic_adapter import build_anthropic_client, resolve_anthropic_token
             # Bedrock + Claude → use AnthropicBedrock SDK for full feature parity
             # (prompt caching, thinking budgets, adaptive thinking).
@@ -3142,7 +3164,7 @@ class AIAgent:
         provider_lower = eff_provider.lower()
         is_claude = "claude" in model_lower
         is_openrouter = base_url_host_matches(eff_base_url, "openrouter.ai")
-        is_anthropic_wire = eff_api_mode == "anthropic_messages"
+        is_anthropic_wire = eff_api_mode in ("anthropic_messages", "claude_local")
         is_native_anthropic = (
             is_anthropic_wire
             and (eff_provider == "anthropic" or base_url_hostname(eff_base_url) == "api.anthropic.com")
@@ -6797,6 +6819,8 @@ class AIAgent:
     def _anthropic_messages_create(self, api_kwargs: dict):
         if self.api_mode == "anthropic_messages":
             self._try_refresh_anthropic_client_credentials()
+        # claude_local skips credential refresh — the spawned `claude` binary
+        # owns its own OAuth lifecycle.
         return self._anthropic_client.messages.create(**api_kwargs)
 
     def _rebuild_anthropic_client(self) -> None:
@@ -6812,7 +6836,13 @@ class AIAgent:
         rebuilt client carries the reduced beta set.
         """
         _drop_1m = bool(getattr(self, "_oauth_1m_beta_disabled", False))
-        if getattr(self, "provider", None) == "bedrock":
+        if self.api_mode == "claude_local":
+            # Rebuild is a no-op for the subprocess client — each invocation
+            # is its own process. Replace with a fresh wrapper anyway so any
+            # config drift (cwd, etc.) is picked up.
+            from agent.claude_local_adapter import build_claude_local_client
+            self._anthropic_client = build_claude_local_client()
+        elif getattr(self, "provider", None) == "bedrock":
             from agent.anthropic_adapter import build_anthropic_bedrock_client
             region = getattr(self, "_bedrock_region", "us-east-1") or "us-east-1"
             self._anthropic_client = build_anthropic_bedrock_client(region)
@@ -6854,7 +6884,9 @@ class AIAgent:
                         client=request_client_holder["client"],
                         on_first_delta=getattr(self, "_codex_on_first_delta", None),
                     )
-                elif self.api_mode == "anthropic_messages":
+                elif self.api_mode in ("anthropic_messages", "claude_local"):
+                    # claude_local shares the dispatcher — its fake client
+                    # exposes the same .messages.create() shape.
                     result["response"] = self._anthropic_messages_create(api_kwargs)
                 elif self.api_mode == "bedrock_converse":
                     # Bedrock uses boto3 directly — no OpenAI client needed.
@@ -6937,7 +6969,7 @@ class AIAgent:
                     f"Aborting call."
                 )
                 try:
-                    if self.api_mode == "anthropic_messages":
+                    if self.api_mode in ("anthropic_messages", "claude_local"):
                         self._anthropic_client.close()
                         self._rebuild_anthropic_client()
                     else:
@@ -7591,6 +7623,12 @@ class AIAgent:
                     try:
                         if self.api_mode == "anthropic_messages":
                             self._try_refresh_anthropic_client_credentials()
+                            result["response"] = _call_anthropic()
+                        elif self.api_mode == "claude_local":
+                            # claude_local exposes messages.stream() with the
+                            # same surface as the Anthropic SDK; reuse the
+                            # anthropic streaming consumer. No credential
+                            # refresh needed — the spawned binary owns auth.
                             result["response"] = _call_anthropic()
                         else:
                             result["response"] = _call_chat_completions()
@@ -8799,7 +8837,7 @@ class AIAgent:
 
     def _build_api_kwargs(self, api_messages: list) -> dict:
         """Build the keyword arguments dict for the active API mode."""
-        if self.api_mode == "anthropic_messages":
+        if self.api_mode in ("anthropic_messages", "claude_local"):
             _transport = self._get_transport()
             anthropic_messages = self._prepare_anthropic_messages_for_api(api_messages)
             ctx_len = getattr(self, "context_compressor", None)

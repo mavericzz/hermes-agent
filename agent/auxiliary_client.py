@@ -2624,6 +2624,27 @@ def resolve_provider_client(
                 else (client, final_model))
 
     if pconfig.auth_type == "external_process":
+        # claude_local doesn't share copilot-acp's credential shape — its
+        # auth lives entirely inside the spawned `claude` binary. Build
+        # the subprocess-backed client directly and wrap it so auxiliary
+        # tasks (title generation, compression, etc.) get routed through
+        # the same Max-plan path as the main agent.
+        if provider == "claude_local":
+            from agent.claude_local_adapter import build_claude_local_client
+            final_model = _normalize_resolved_model(
+                model
+                or (main_runtime.get("model") if main_runtime else None)
+                or _read_main_model(),
+                provider,
+            )
+            real_client = build_claude_local_client()
+            client = AnthropicAuxiliaryClient(
+                real_client, final_model, api_key="", base_url="local://claude",
+            )
+            logger.debug("resolve_provider_client: %s (%s)", provider, final_model)
+            return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
+                    else (client, final_model))
+
         creds = resolve_external_process_provider_credentials(provider)
         final_model = _normalize_resolved_model(
             model

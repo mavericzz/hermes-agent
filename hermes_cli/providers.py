@@ -92,6 +92,15 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
         transport="anthropic_messages",
         extra_env_vars=("ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"),
     ),
+    # Routes inference through the locally-installed `claude` binary so
+    # usage bills against the Claude Max plan instead of the third-party
+    # OAuth bucket. Auth is owned by the spawned binary — hermes never
+    # sees a token for this provider. See agent/claude_local_adapter.py.
+    "claude_local": HermesOverlay(
+        transport="claude_local",
+        auth_type="external_process",
+        base_url_override="local://claude",
+    ),
     "zai": HermesOverlay(
         transport="openai_chat",
         extra_env_vars=("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"),
@@ -361,6 +370,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "local": "Local endpoint",
     "bedrock": "AWS Bedrock",
     "ollama-cloud": "Ollama Cloud",
+    "claude_local": "Claude Code (local CLI, Max plan)",
 }
 
 
@@ -371,6 +381,7 @@ TRANSPORT_TO_API_MODE: Dict[str, str] = {
     "anthropic_messages": "anthropic_messages",
     "codex_responses": "codex_responses",
     "bedrock_converse": "bedrock_converse",
+    "claude_local": "claude_local",
 }
 
 
