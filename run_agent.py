@@ -3108,7 +3108,16 @@ class AIAgent:
         """Compute the effective non-stream stale timeout for this request."""
         stale_base, uses_implicit_default = self._resolved_api_call_stale_timeout_base()
         base_url = getattr(self, "_base_url", None) or self.base_url or ""
-        if uses_implicit_default and base_url and is_local_endpoint(base_url):
+        # claude_local subprocess: same first-token-latency profile as a local
+        # HTTP endpoint (claude --print buffers per sub-turn). Disable the
+        # implicit timeout so healthy long-running calls aren't killed.
+        is_subprocess_provider = (
+            getattr(self, "api_mode", "") == "claude_local"
+            or base_url.startswith("local://")
+        )
+        if uses_implicit_default and (
+            is_subprocess_provider or (base_url and is_local_endpoint(base_url))
+        ):
             return float("inf")
 
         est_tokens = sum(len(str(v)) for v in messages) // 4
@@ -7875,12 +7884,30 @@ class AIAgent:
                     self._close_request_openai_client(request_client, reason="stream_request_complete")
 
         _stream_stale_timeout_base = float(os.getenv("HERMES_STREAM_STALE_TIMEOUT", 180.0))
+        # claude_local routes inference through a `claude --print` subprocess,
+        # which buffers each sub-turn server-side and only emits an `assistant`
+        # event when that sub-turn completes. The hermes streaming consumer
+        # therefore sees no chunks for the full first-turn latency — easily
+        # tens of seconds on large contexts, sometimes minutes. The stale
+        # detector kills healthy subprocesses in that window, so disable it
+        # for claude_local the same way it's disabled for local HTTP endpoints.
+        _is_subprocess_provider = (
+            getattr(self, "api_mode", "") == "claude_local"
+            or (self.base_url or "").startswith("local://")
+        )
         # Local providers (Ollama, oMLX, llama-cpp) can take 300+ seconds
         # for prefill on large contexts.  Disable the stale detector unless
         # the user explicitly set HERMES_STREAM_STALE_TIMEOUT.
-        if _stream_stale_timeout_base == 180.0 and self.base_url and is_local_endpoint(self.base_url):
+        if _stream_stale_timeout_base == 180.0 and (
+            _is_subprocess_provider
+            or (self.base_url and is_local_endpoint(self.base_url))
+        ):
             _stream_stale_timeout = float("inf")
-            logger.debug("Local provider detected (%s) — stale stream timeout disabled", self.base_url)
+            logger.debug(
+                "Local/subprocess provider detected (api_mode=%s base_url=%s) — "
+                "stale stream timeout disabled",
+                getattr(self, "api_mode", ""), self.base_url,
+            )
         else:
             # Scale the stale timeout for large contexts: slow models (like Opus)
             # can legitimately think for minutes before producing the first token
